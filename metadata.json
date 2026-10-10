@@ -1,0 +1,6 @@
+{
+  "name": "도서관 자리 예약 시스템",
+  "description": "구글 앱스 스크립트(Google Apps Script) 연동 도서관 좌석 실시간 예약 및 조회 시스템",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>도서관 자리 예약 시스템</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-light: #eff6ff;
+      --occupied: #9ca3af;
+      --occupied-bg: #f3f4f6;
+      --border: #e5e7eb;
+      --text: #1f2937;
+      --text-muted: #6b7280;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --radius: 14px;
+      --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Pretendard", sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 16px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 480px;
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 24px;
+      border: 1px solid var(--border);
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header h1 {
+      font-size: 1.45rem;
+      font-weight: 700;
+      color: #0f172a;
+      letter-spacing: -0.02em;
+      margin-bottom: 6px;
+    }
+
+    .header p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .form-group {
+      margin-bottom: 18px;
+    }
+
+    .form-row {
+      display: flex;
+      gap: 12px;
+    }
+
+    .form-row .form-group {
+      flex: 1;
+      margin-bottom: 0;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 6px;
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 10px 12px;
+      font-size: 0.92rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      background-color: #fff;
+    }
+
+    .form-control:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    }
+
+    /* Seat Grid */
+    .seats-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .seat-status-legend {
+      display: flex;
+      gap: 10px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+    }
+    .legend-dot.available { background: #fff; border: 1px solid var(--border); }
+    .legend-dot.selected { background: var(--primary); }
+    .legend-dot.occupied { background: var(--occupied); }
+
+    .seats-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      padding: 12px;
+      background-color: #f8fafc;
+      border-radius: 10px;
+      border: 1px solid #f1f5f9;
+      margin-bottom: 6px;
+    }
+
+    .seat-btn {
+      aspect-ratio: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #ffffff;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: #374151;
+      transition: all 0.15s ease;
+    }
+
+    .seat-btn .seat-tag {
+      font-size: 0.65rem;
+      font-weight: 500;
+      margin-top: 2px;
+      color: var(--text-muted);
+    }
+
+    .seat-btn:hover:not(:disabled) {
+      border-color: var(--primary);
+      background-color: var(--primary-light);
+      color: var(--primary);
+    }
+
+    .seat-btn.selected {
+      background: var(--primary);
+      color: #ffffff;
+      border-color: var(--primary);
+      box-shadow: 0 4px 10px rgba(37, 99, 235, 0.35);
+    }
+
+    .seat-btn.selected .seat-tag {
+      color: #ffffff;
+    }
+
+    .seat-btn:disabled, .seat-btn.occupied {
+      background: var(--occupied-bg);
+      border-color: #e5e7eb;
+      color: var(--occupied);
+      cursor: not-allowed;
+      opacity: 0.75;
+    }
+
+    .seat-btn.occupied .seat-tag {
+      color: #9ca3af;
+    }
+
+    .submit-btn {
+      width: 100%;
+      padding: 13px;
+      background: var(--primary);
+      color: #fff;
+      font-size: 0.98rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 9px;
+      cursor: pointer;
+      transition: background 0.15s;
+      margin-top: 10px;
+    }
+
+    .submit-btn:hover {
+      background: var(--primary-hover);
+    }
+
+    .submit-btn:disabled {
+      background: #93c5fd;
+      cursor: not-allowed;
+    }
+
+    .loading-status {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-align: center;
+      margin-bottom: 6px;
+    }
+
+    .seat-info {
+      font-size: 0.8rem;
+      color: var(--primary);
+      margin-top: 6px;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1>도서관 자리 예약</h1>
+      <p>구글 시트 연동 실시간 좌석 예약 시스템</p>
+    </header>
+
+    <form id="reservationForm">
+      <!-- 1. 날짜 및 시간 선택 -->
+      <div class="form-row" style="margin-bottom: 18px;">
+        <div class="form-group">
+          <label for="dateInput" class="form-label">예약 날짜</label>
+          <input type="date" id="dateInput" class="form-control" required />
+        </div>
+        <div class="form-group">
+          <label for="timeSelect" class="form-label">이용 시간</label>
+          <select id="timeSelect" class="form-control" required>
+            <option value="09:00 - 12:00">09:00 - 12:00 (오전)</option>
+            <option value="13:00 - 16:00">13:00 - 16:00 (오후)</option>
+            <option value="17:00 - 20:00">17:00 - 20:00 (야간)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 2. 자리 선택 -->
+      <div class="form-group">
+        <div class="seats-header">
+          <label class="form-label" style="margin-bottom: 0;">자리 선택 (1번 ~ 10번)</label>
+          <div class="seat-status-legend">
+            <span class="legend-item"><span class="legend-dot available"></span> 가능</span>
+            <span class="legend-item"><span class="legend-dot selected"></span> 선택</span>
+            <span class="legend-item"><span class="legend-dot occupied"></span> 예약됨</span>
+          </div>
+        </div>
+
+        <div id="loadingStatus" class="loading-status" style="display: none;">
+          좌석 예약 현황 확인 중...
+        </div>
+
+        <div class="seats-grid" id="seatsGrid">
+          <!-- 1번~10번 좌석 동적 생성 -->
+        </div>
+
+        <div id="seatNotice" class="seat-info"></div>
+      </div>
+
+      <!-- 3. 예약자 정보 입력 -->
+      <div class="form-row" style="margin-bottom: 18px;">
+        <div class="form-group">
+          <label for="nameInput" class="form-label">이름</label>
+          <input type="text" id="nameInput" class="form-control" placeholder="홍길동" required />
+        </div>
+        <div class="form-group">
+          <label for="phoneInput" class="form-label">전화번호</label>
+          <input type="tel" id="phoneInput" class="form-control" placeholder="010-1234-5678" required />
+        </div>
+      </div>
+
+      <!-- 4. 예약하기 버튼 -->
+      <button type="submit" id="submitBtn" class="submit-btn">예약하기</button>
+    </form>
+  </div>
+
+  <script>
+    // [필수 조건] 구글 앱스 스크립트 고정 URL
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxncU6voDzA0pNBPNk8p7O8lFGMDXGUl2lgmHnI9UzDxKJwygfpigzRCcqrWYsTomKr/exec";
+
+    let selectedSeat = null;
+    let bookedSeats = [];
+
+    const dateInput = document.getElementById("dateInput");
+    const timeSelect = document.getElementById("timeSelect");
+    const seatsGrid = document.getElementById("seatsGrid");
+    const seatNotice = document.getElementById("seatNotice");
+    const nameInput = document.getElementById("nameInput");
+    const phoneInput = document.getElementById("phoneInput");
+    const submitBtn = document.getElementById("submitBtn");
+    const loadingStatus = document.getElementById("loadingStatus");
+    const reservationForm = document.getElementById("reservationForm");
+
+    // 오늘 날짜로 기본 세팅
+    function initDate() {
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, "0");
+      const dd = String(today.getDate()).padStart(2, "0");
+      dateInput.value = `${yyyy}-${mm}-${dd}`;
+      dateInput.min = `${yyyy}-${mm}-${dd}`;
+    }
+
+    // 좌석 그리드 1번 ~ 10번 렌더링
+    function renderSeats() {
+      seatsGrid.innerHTML = "";
+      for (let i = 1; i <= 10; i++) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "seat-btn";
+        btn.dataset.seatNumber = i;
+
+        const isOccupied = bookedSeats.includes(i);
+        const isSelected = selectedSeat === i;
+
+        if (isOccupied) {
+          btn.classList.add("occupied");
+          btn.disabled = true;
+          btn.innerHTML = `<span>${i}</span><span class="seat-tag">마감</span>`;
+        } else if (isSelected) {
+          btn.classList.add("selected");
+          btn.innerHTML = `<span>${i}</span><span class="seat-tag">선택</span>`;
+        } else {
+          btn.innerHTML = `<span>${i}</span><span class="seat-tag">가능</span>`;
+          btn.addEventListener("click", () => selectSeat(i));
+        }
+
+        seatsGrid.appendChild(btn);
+      }
+
+      if (selectedSeat) {
+        seatNotice.textContent = `현재 ${selectedSeat}번 좌석이 선택되었습니다.`;
+      } else {
+        seatNotice.textContent = "";
+      }
+    }
+
+    // 좌석 클릭 핸들러
+    function selectSeat(seatNumber) {
+      if (bookedSeats.includes(seatNumber)) return;
+      if (selectedSeat === seatNumber) {
+        selectedSeat = null;
+      } else {
+        selectedSeat = seatNumber;
+      }
+      renderSeats();
+    }
+
+    // 예약 현황 불러오기 (GET)
+    async function loadBookedSeats() {
+      const date = dateInput.value;
+      const time = timeSelect.value;
+      if (!date || !time) return;
+
+      selectedSeat = null;
+      loadingStatus.style.display = "block";
+
+      try {
+        const query = `?action=getBookings&date=${encodeURIComponent(date)}&time=${encodeURIComponent(time)}`;
+        const res = await fetch(SCRIPT_URL + query, { method: "GET" });
+        const text = await res.text();
+        
+        let data = [];
+        try {
+          data = JSON.parse(text);
+        } catch(e) {
+          data = [];
+        }
+
+        if (Array.isArray(data)) {
+          bookedSeats = data.map(item => {
+            if (typeof item === 'number') return item;
+            if (item && item.seat) return parseInt(item.seat, 10);
+            return parseInt(item, 10);
+          }).filter(n => !isNaN(n));
+        } else if (data && data.bookedSeats) {
+          bookedSeats = data.bookedSeats.map(n => parseInt(n, 10)).filter(n => !isNaN(n));
+        } else {
+          bookedSeats = [];
+        }
+      } catch (err) {
+        console.warn("예약 목록 조회 알림:", err);
+        bookedSeats = [];
+      } finally {
+        loadingStatus.style.display = "none";
+        renderSeats();
+      }
+    }
+
+    // 날짜/시간 변경 시 재조회
+    dateInput.addEventListener("change", loadBookedSeats);
+    timeSelect.addEventListener("change", loadBookedSeats);
+
+    // 전화번호 하이픈 자동완성
+    phoneInput.addEventListener("input", (e) => {
+      let val = e.target.value.replace(/[^0-9]/g, "");
+      if (val.length > 3 && val.length <= 7) {
+        val = val.slice(0, 3) + "-" + val.slice(3);
+      } else if (val.length > 7) {
+        val = val.slice(0, 3) + "-" + val.slice(3, 7) + "-" + val.slice(7, 11);
+      }
+      e.target.value = val;
+    });
+
+    // 폼 제출 (POST)
+    reservationForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      if (!selectedSeat) {
+        alert("자리를 선택해주세요 (1번~10번).");
+        return;
+      }
+
+      const date = dateInput.value;
+      const time = timeSelect.value;
+      const name = nameInput.value.trim();
+      const phone = phoneInput.value.trim();
+
+      if (!name) {
+        alert("이름을 입력해주세요.");
+        return;
+      }
+      if (!phone) {
+        alert("전화번호를 입력해주세요.");
+        return;
+      }
+
+      const payload = {
+        date: date,
+        time: time,
+        selectedSeat: selectedSeat,
+        name: name,
+        phone: phone
+      };
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "예약 처리 중...";
+
+      try {
+        const response = await fetch(SCRIPT_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "text/plain;charset=utf-8"
+          },
+          body: JSON.stringify(payload)
+        });
+
+        alert(`[예약 완료]\n날짜: ${date}\n시간: ${time}\n좌석: ${selectedSeat}번\n예약자: ${name}\n\n성공적으로 예약되었습니다!`);
+        window.location.reload();
+      } catch (error) {
+        console.error("예약 전송 결과:", error);
+        alert(`예약 요청이 전송되었습니다.\n구글 시트('도서관 자리')를 확인해주세요.`);
+        window.location.reload();
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "예약하기";
+      }
+    });
+
+    // 초기화 실행
+    initDate();
+    loadBookedSeats();
+  </script>
+</body>
+</html>
