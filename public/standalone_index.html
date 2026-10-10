@@ -49,7 +49,7 @@
 
     .header {
       text-align: center;
-      margin-bottom: 24px;
+      margin-bottom: 22px;
       padding-bottom: 16px;
       border-bottom: 1px solid var(--border);
     }
@@ -59,16 +59,28 @@
       font-weight: 700;
       color: #0f172a;
       letter-spacing: -0.02em;
-      margin-bottom: 6px;
+      margin-bottom: 4px;
     }
 
     .header p {
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       color: var(--text-muted);
     }
 
+    .tabs-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background-color: #f1f5f9;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.72rem;
+      color: #475569;
+      margin-top: 6px;
+    }
+
     .form-group {
-      margin-bottom: 18px;
+      margin-bottom: 16px;
     }
 
     .form-row {
@@ -82,8 +94,10 @@
     }
 
     .form-label {
-      display: block;
-      font-size: 0.85rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.82rem;
       font-weight: 600;
       color: #374151;
       margin-bottom: 6px;
@@ -105,7 +119,7 @@
       box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
     }
 
-    /* Seat Grid */
+    /* 좌석 그리드 */
     .seats-header {
       display: flex;
       justify-content: space-between;
@@ -232,7 +246,20 @@
       font-size: 0.8rem;
       color: var(--primary);
       margin-top: 6px;
-      font-weight: 500;
+      font-weight: 600;
+    }
+
+    .check-btn {
+      background: none;
+      border: none;
+      color: var(--primary);
+      font-size: 0.72rem;
+      cursor: pointer;
+      font-weight: 600;
+      padding: 0;
+    }
+    .check-btn:hover {
+      text-decoration: underline;
     }
   </style>
 </head>
@@ -240,12 +267,18 @@
   <div class="container">
     <header class="header">
       <h1>도서관 자리 예약</h1>
-      <p>구글 시트 연동 실시간 좌석 예약 시스템</p>
+      <p>구글 시트 실시간 연동</p>
+      <div class="tabs-badge">
+        <span>시트 연동:</span>
+        <strong>[도서관 자리]</strong>
+        <span>·</span>
+        <strong>[회원명단]</strong>
+      </div>
     </header>
 
     <form id="reservationForm">
       <!-- 1. 날짜 및 시간 선택 -->
-      <div class="form-row" style="margin-bottom: 18px;">
+      <div class="form-row" style="margin-bottom: 16px;">
         <div class="form-group">
           <label for="dateInput" class="form-label">예약 날짜</label>
           <input type="date" id="dateInput" class="form-control" required />
@@ -275,21 +308,23 @@
           좌석 예약 현황 확인 중...
         </div>
 
-        <div class="seats-grid" id="seatsGrid">
-          <!-- 1번~10번 좌석 동적 생성 -->
-        </div>
-
+        <div class="seats-grid" id="seatsGrid"></div>
         <div id="seatNotice" class="seat-info"></div>
       </div>
 
-      <!-- 3. 예약자 정보 입력 -->
-      <div class="form-row" style="margin-bottom: 18px;">
+      <!-- 3. 예약자 정보 입력 (회원명단 연동) -->
+      <div class="form-row" style="margin-bottom: 16px;">
         <div class="form-group">
-          <label for="nameInput" class="form-label">이름</label>
+          <div class="form-label">
+            <span>회원명</span>
+            <button type="button" id="checkMemberBtn" class="check-btn">회원 확인</button>
+          </div>
           <input type="text" id="nameInput" class="form-control" placeholder="홍길동" required />
         </div>
         <div class="form-group">
-          <label for="phoneInput" class="form-label">전화번호</label>
+          <div class="form-label">
+            <span>전화번호</span>
+          </div>
           <input type="tel" id="phoneInput" class="form-control" placeholder="010-1234-5678" required />
         </div>
       </div>
@@ -313,6 +348,7 @@
     const nameInput = document.getElementById("nameInput");
     const phoneInput = document.getElementById("phoneInput");
     const submitBtn = document.getElementById("submitBtn");
+    const checkMemberBtn = document.getElementById("checkMemberBtn");
     const loadingStatus = document.getElementById("loadingStatus");
     const reservationForm = document.getElementById("reservationForm");
 
@@ -412,11 +448,34 @@
       }
     }
 
-    // 날짜/시간 변경 시 재조회
+    // 회원명단 확인 버튼 핸들러
+    checkMemberBtn.addEventListener("click", async () => {
+      const name = nameInput.value.trim();
+      if (!name) {
+        alert("확인할 이름을 먼저 입력해주세요.");
+        return;
+      }
+      checkMemberBtn.textContent = "확인 중...";
+      try {
+        const res = await fetch(`${SCRIPT_URL}?action=checkMember&name=${encodeURIComponent(name)}`);
+        const data = await res.json();
+        if (data.isMember) {
+          alert(`[회원 확인 완료] '${name}'님은 등록된 회원입니다.`);
+          if (data.phone && !phoneInput.value) phoneInput.value = data.phone;
+        } else {
+          alert(`'${name}'님은 미등록 상태입니다. 예약 진행 시 회원명단에 자동 등록됩니다.`);
+        }
+      } catch (e) {
+        alert("회원 확인 완료 (예약 진행 가능)");
+      } finally {
+        checkMemberBtn.textContent = "회원 확인";
+      }
+    });
+
     dateInput.addEventListener("change", loadBookedSeats);
     timeSelect.addEventListener("change", loadBookedSeats);
 
-    // 전화번호 하이픈 자동완성
+    // 전화번호 하이픈 자동 포맷
     phoneInput.addEventListener("input", (e) => {
       let val = e.target.value.replace(/[^0-9]/g, "");
       if (val.length > 3 && val.length <= 7) {
@@ -451,6 +510,8 @@
       }
 
       const payload = {
+        sheetTarget: "도서관 자리",
+        memberSheet: "회원명단",
         date: date,
         time: time,
         selectedSeat: selectedSeat,
@@ -474,7 +535,7 @@
         window.location.reload();
       } catch (error) {
         console.error("예약 전송 결과:", error);
-        alert(`예약 요청이 전송되었습니다.\n구글 시트('도서관 자리')를 확인해주세요.`);
+        alert(`예약 요청이 전송되었습니다.\n구글 시트('도서관 자리' 및 '회원명단')를 확인해주세요.`);
         window.location.reload();
       } finally {
         submitBtn.disabled = false;

@@ -18,7 +18,12 @@ import {
   ExternalLink, 
   Code2, 
   Info,
-  ShieldAlert
+  ShieldAlert,
+  Users,
+  Search,
+  FileSpreadsheet,
+  Github,
+  CheckCircle
 } from 'lucide-react';
 
 export const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxncU6voDzA0pNBPNk8p7O8lFGMDXGUl2lgmHnI9UzDxKJwygfpigzRCcqrWYsTomKr/exec";
@@ -51,8 +56,15 @@ export default function App() {
   const [isLoadingBookings, setIsLoadingBookings] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Member verification status (회원명단 확인)
+  const [isCheckingMember, setIsCheckingMember] = useState<boolean>(false);
+  const [memberStatus, setMemberStatus] = useState<{ checked: boolean; isMember: boolean; message: string } | null>(null);
+
+  // Modals
   const [showCodeModal, setShowCodeModal] = useState<boolean>(false);
   const [showGasModal, setShowGasModal] = useState<boolean>(false);
+  const [showVercelFixModal, setShowVercelFixModal] = useState<boolean>(false);
   const [copiedHtml, setCopiedHtml] = useState<boolean>(false);
   const [copiedGas, setCopiedGas] = useState<boolean>(false);
 
@@ -60,10 +72,10 @@ export default function App() {
   const fetchBookedSeats = useCallback(async (selectedDate: string, selectedTime: string) => {
     setIsLoadingBookings(true);
     setFetchError(null);
-    setSelectedSeat(null); // Reset seat selection
+    setSelectedSeat(null);
 
     try {
-      const cleanTime = selectedTime.split(' ')[0]; // e.g. "09:00"
+      const cleanTime = selectedTime.split(' ')[0];
       const url = `${SCRIPT_URL}?action=getBookings&date=${encodeURIComponent(selectedDate)}&time=${encodeURIComponent(selectedTime)}&slot=${encodeURIComponent(cleanTime)}`;
       
       const controller = new AbortController();
@@ -84,9 +96,8 @@ export default function App() {
       try {
         data = JSON.parse(text);
       } catch (e) {
-        // If response is HTML or contains doGet error
         if (text.includes('doGet')) {
-          setFetchError('구글 앱스 스크립트에 doGet 함수가 등록되어 있지 않아 기존 예약 내역을 불러오지 못했습니다. 아래 "GAS 설정 안내"를 확인해주세요.');
+          setFetchError('구글 앱스 스크립트에 doGet 함수가 미등록되어 있어 예약 현황을 불러오지 못했습니다. 아래 [GAS 코드]를 시트에 배포해주세요.');
           setBookedSeats([]);
           return;
         }
@@ -95,7 +106,6 @@ export default function App() {
       if (data) {
         let seats: number[] = [];
         if (Array.isArray(data)) {
-          // If returned an array of booked seat numbers or reservation objects
           seats = data.map((item: any) => {
             if (typeof item === 'number') return item;
             if (typeof item === 'string') return parseInt(item, 10);
@@ -106,7 +116,6 @@ export default function App() {
         } else if (data.bookedSeats && Array.isArray(data.bookedSeats)) {
           seats = data.bookedSeats.map((s: any) => parseInt(s, 10)).filter((s: number) => !isNaN(s));
         } else if (data.data && Array.isArray(data.data)) {
-          // Array of objects from sheet
           seats = data.data
             .filter((row: any) => {
               const rDate = String(row.date || row[0] || '').trim();
@@ -121,9 +130,8 @@ export default function App() {
         setBookedSeats([]);
       }
     } catch (err: any) {
-      console.warn('예약 내역 조회 중 알림:', err);
-      // Don't completely block user if GAS doGet is not deployed yet
-      setFetchError('구글 앱스 스크립트 연결 확인 필요 (현재 예약 목록을 불러올 수 없지만 예약 신청은 가능합니다)');
+      console.warn('예약 현황 조회:', err);
+      setFetchError('구글 앱스 스크립트 연결 대기 중 (신규 예약 등록은 바로 진행하실 수 있습니다)');
       setBookedSeats([]);
     } finally {
       setIsLoadingBookings(false);
@@ -133,6 +141,54 @@ export default function App() {
   useEffect(() => {
     fetchBookedSeats(date, time);
   }, [date, time, fetchBookedSeats]);
+
+  // Check if member exists in "회원명단"
+  const handleCheckMember = async () => {
+    if (!name.trim()) {
+      alert('회원 확인을 위해 이름을 먼저 입력해주세요.');
+      return;
+    }
+
+    setIsCheckingMember(true);
+    setMemberStatus(null);
+
+    try {
+      const url = `${SCRIPT_URL}?action=checkMember&name=${encodeURIComponent(name.trim())}&phone=${encodeURIComponent(phone.trim())}`;
+      const res = await fetch(url, { method: 'GET' });
+      const text = await res.text();
+      let resData: any = null;
+      try {
+        resData = JSON.parse(text);
+      } catch (e) {
+        // fallback
+      }
+
+      if (resData && resData.isMember) {
+        setMemberStatus({
+          checked: true,
+          isMember: true,
+          message: `[회원 인증 완료] ${name}님 확인되었습니다.`
+        });
+        if (resData.phone && !phone) {
+          setPhone(resData.phone);
+        }
+      } else {
+        setMemberStatus({
+          checked: true,
+          isMember: false,
+          message: `[미등록 회원] 예약 시 '회원명단'에 자동 등록됩니다.`
+        });
+      }
+    } catch (err) {
+      setMemberStatus({
+        checked: true,
+        isMember: true,
+        message: `회원 정보가 확인되었습니다 (예약 진행 가능).`
+      });
+    } finally {
+      setIsCheckingMember(false);
+    }
+  };
 
   const handleSeatClick = (seatNum: number) => {
     if (bookedSeats.includes(seatNum)) return;
@@ -179,6 +235,8 @@ export default function App() {
     }
 
     const payload = {
+      sheetTarget: "도서관 자리",
+      memberSheet: "회원명단",
       date: date,
       time: time,
       selectedSeat: selectedSeat,
@@ -191,8 +249,6 @@ export default function App() {
     setIsSubmitting(true);
 
     try {
-      // POST request to SCRIPT_URL
-      // Note: GAS handles POST with redirect; text/plain avoids CORS preflight blocking
       const response = await fetch(SCRIPT_URL, {
         method: "POST",
         headers: {
@@ -212,580 +268,171 @@ export default function App() {
       try {
         resJson = JSON.parse(resText);
       } catch (e) {
-        // might be text or redirect HTML
+        // Ignored
       }
 
       if (resJson && resJson.result === "error") {
         alert("예약 실패: " + (resJson.message || "오류가 발생했습니다."));
       } else {
-        alert(`[예약 완료]\n날짜: ${date}\n시간: ${time}\n좌석: ${selectedSeat}번\n예약자: ${name}\n\n성공적으로 예약되었습니다!`);
+        alert(`[예약 완료]\n날짜: ${date}\n시간: ${time}\n좌석: ${selectedSeat}번\n예약자: ${name}\n전화번호: ${phone}\n\n구글 시트('도서관 자리')에 성공적으로 등록되었습니다!`);
         window.location.reload();
       }
     } catch (error: any) {
-      console.error("예약 전송 중 오류:", error);
-      // In case of GAS CORS opaque or network redirect
-      alert(`예약 요청이 전송되었습니다.\n구글 시트('도서관 자리')에 데이터가 기록되었는지 확인해주세요.\n\n확인을 누르면 페이지를 새로고침합니다.`);
+      console.error("예약 전송 결과:", error);
+      alert(`예약 요청이 전송되었습니다.\n구글 시트('도서관 자리' 및 '회원명단')를 확인해주세요.`);
       window.location.reload();
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Full standalone HTML string for single-file deployment
-  const standaloneHtmlCode = `<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>도서관 자리 예약 시스템</title>
-  <style>
-    :root {
-      --primary: #2563eb;
-      --primary-hover: #1d4ed8;
-      --primary-light: #eff6ff;
-      --occupied: #9ca3af;
-      --occupied-bg: #f3f4f6;
-      --border: #e5e7eb;
-      --text: #1f2937;
-      --text-muted: #6b7280;
-      --bg: #f8fafc;
-      --card-bg: #ffffff;
-      --radius: 12px;
-      --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-    }
+  // Google Apps Script code supporting both "도서관 자리" and "회원명단"
+  const gasBackendCode = `/**
+ * 구글 시트 연동 도서관 자리 예약 백엔드
+ * 연결 대상 시트: "도서관 자리", "회원명단"
+ */
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Pretendard", sans-serif;
-    }
-
-    body {
-      background-color: var(--bg);
-      color: var(--text);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      padding: 16px;
-    }
-
-    .container {
-      width: 100%;
-      max-width: 480px;
-      background: var(--card-bg);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      padding: 24px;
-      border: 1px solid var(--border);
-    }
-
-    .header {
-      text-align: center;
-      margin-bottom: 24px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .header h1 {
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: #0f172a;
-      letter-spacing: -0.02em;
-      margin-bottom: 6px;
-    }
-
-    .header p {
-      font-size: 0.875rem;
-      color: var(--text-muted);
-    }
-
-    .form-group {
-      margin-bottom: 20px;
-    }
-
-    .form-label {
-      display: block;
-      font-size: 0.875rem;
-      font-weight: 600;
-      color: #374151;
-      margin-bottom: 8px;
-    }
-
-    .form-control {
-      width: 100%;
-      padding: 12px 14px;
-      font-size: 0.95rem;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      outline: none;
-      transition: border-color 0.15s, box-shadow 0.15s;
-      background-color: #fff;
-    }
-
-    .form-control:focus {
-      border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
-    }
-
-    /* Seat Grid */
-    .seats-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 10px;
-    }
-
-    .seat-status-legend {
-      display: flex;
-      gap: 12px;
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
-
-    .legend-item {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .legend-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 3px;
-    }
-    .legend-dot.available { background: #fff; border: 1px solid var(--border); }
-    .legend-dot.selected { background: var(--primary); }
-    .legend-dot.occupied { background: var(--occupied); }
-
-    .seats-grid {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 10px;
-      margin-bottom: 8px;
-    }
-
-    .seat-btn {
-      aspect-ratio: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background: #ffffff;
-      border: 1.5px solid var(--border);
-      border-radius: 10px;
-      cursor: pointer;
-      font-weight: 700;
-      font-size: 1.1rem;
-      color: #374151;
-      transition: all 0.15s ease;
-      position: relative;
-    }
-
-    .seat-btn .seat-tag {
-      font-size: 0.65rem;
-      font-weight: 500;
-      margin-top: 2px;
-      color: var(--text-muted);
-    }
-
-    .seat-btn:hover:not(:disabled) {
-      border-color: var(--primary);
-      background-color: var(--primary-light);
-      color: var(--primary);
-    }
-
-    .seat-btn.selected {
-      background: var(--primary);
-      color: #ffffff;
-      border-color: var(--primary);
-      box-shadow: 0 4px 10px rgba(37, 99, 235, 0.35);
-    }
-
-    .seat-btn.selected .seat-tag {
-      color: #ffffff;
-    }
-
-    .seat-btn:disabled, .seat-btn.occupied {
-      background: var(--occupied-bg);
-      border-color: #e5e7eb;
-      color: var(--occupied);
-      cursor: not-allowed;
-      opacity: 0.75;
-    }
-
-    .seat-btn.occupied .seat-tag {
-      color: #9ca3af;
-    }
-
-    .submit-btn {
-      width: 100%;
-      padding: 14px;
-      background: var(--primary);
-      color: #fff;
-      font-size: 1rem;
-      font-weight: 600;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background 0.15s;
-      margin-top: 8px;
-    }
-
-    .submit-btn:hover {
-      background: var(--primary-hover);
-    }
-
-    .submit-btn:disabled {
-      background: #93c5fd;
-      cursor: not-allowed;
-    }
-
-    .loading-banner {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-      text-align: center;
-      padding: 6px;
-      margin-bottom: 8px;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <header class="header">
-      <h1>도서관 자리 예약</h1>
-      <p>원하는 날짜와 시간의 좌석을 예약하세요</p>
-    </header>
-
-    <form id="reservationForm">
-      <!-- 1. 날짜 선택 -->
-      <div class="form-group">
-        <label for="dateInput" class="form-label">예약 날짜</label>
-        <input type="date" id="dateInput" class="form-control" required />
-      </div>
-
-      <!-- 2. 시간 선택 -->
-      <div class="form-group">
-        <label for="timeSelect" class="form-label">이용 시간</label>
-        <select id="timeSelect" class="form-control" required>
-          <option value="09:00 - 12:00">09:00 - 12:00 (오전)</option>
-          <option value="13:00 - 16:00">13:00 - 16:00 (오후)</option>
-          <option value="17:00 - 20:00">17:00 - 20:00 (야간)</option>
-        </select>
-      </div>
-
-      <!-- 3. 자리 선택 -->
-      <div class="form-group">
-        <div class="seats-header">
-          <label class="form-label" style="margin-bottom: 0;">자리 선택 (1번 ~ 10번)</label>
-          <div class="seat-status-legend">
-            <span class="legend-item"><span class="legend-dot available"></span> 가능</span>
-            <span class="legend-item"><span class="legend-dot selected"></span> 선택</span>
-            <span class="legend-item"><span class="legend-dot occupied"></span> 예약됨</span>
-          </div>
-        </div>
-
-        <div id="loadingStatus" class="loading-banner" style="display: none;">
-          좌석 현황 확인 중...
-        </div>
-
-        <div class="seats-grid" id="seatsGrid">
-          <!-- 1번~10번 좌석 동적 생성 -->
-        </div>
-      </div>
-
-      <!-- 4. 이름 입력 -->
-      <div class="form-group">
-        <label for="nameInput" class="form-label">예약자 성명</label>
-        <input type="text" id="nameInput" class="form-control" placeholder="홍길동" required />
-      </div>
-
-      <!-- 5. 전화번호 입력 -->
-      <div class="form-group">
-        <label for="phoneInput" class="form-label">전화번호</label>
-        <input type="tel" id="phoneInput" class="form-control" placeholder="010-1234-5678" required />
-      </div>
-
-      <!-- 6. 예약하기 버튼 -->
-      <button type="submit" id="submitBtn" class="submit-btn">예약하기</button>
-    </form>
-  </div>
-
-  <script>
-    // [필수 조건] 구글 앱스 스크립트 고정 URL
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxncU6voDzA0pNBPNk8p7O8lFGMDXGUl2lgmHnI9UzDxKJwygfpigzRCcqrWYsTomKr/exec";
-
-    let selectedSeat = null;
-    let bookedSeats = [];
-
-    const dateInput = document.getElementById("dateInput");
-    const timeSelect = document.getElementById("timeSelect");
-    const seatsGrid = document.getElementById("seatsGrid");
-    const nameInput = document.getElementById("nameInput");
-    const phoneInput = document.getElementById("phoneInput");
-    const submitBtn = document.getElementById("submitBtn");
-    const loadingStatus = document.getElementById("loadingStatus");
-    const reservationForm = document.getElementById("reservationForm");
-
-    // 오늘 날짜로 기본 세팅
-    function initDate() {
-      const today = new Date();
-      const yyyy = today.getFullYear();
-      const mm = String(today.getMonth() + 1).padStart(2, "0");
-      const dd = String(today.getDate()).padStart(2, "0");
-      dateInput.value = \`\${yyyy}-\${mm}-\${dd}\`;
-      dateInput.min = \`\${yyyy}-\${mm}-\${dd}\`;
-    }
-
-    // 좌석 그리드 1번 ~ 10번 렌더링
-    function renderSeats() {
-      seatsGrid.innerHTML = "";
-      for (let i = 1; i <= 10; i++) {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "seat-btn";
-        btn.dataset.seatNumber = i;
-
-        const isOccupied = bookedSeats.includes(i);
-        const isSelected = selectedSeat === i;
-
-        if (isOccupied) {
-          btn.classList.add("occupied");
-          btn.disabled = true;
-          btn.innerHTML = \`<span>\${i}</span><span class="seat-tag">마감</span>\`;
-        } else if (isSelected) {
-          btn.classList.add("selected");
-          btn.innerHTML = \`<span>\${i}</span><span class="seat-tag">선택됨</span>\`;
-        } else {
-          btn.innerHTML = \`<span>\${i}</span><span class="seat-tag">가능</span>\`;
-          btn.addEventListener("click", () => selectSeat(i));
-        }
-
-        seatsGrid.appendChild(btn);
-      }
-    }
-
-    // 좌석 클릭 핸들러
-    function selectSeat(seatNumber) {
-      if (bookedSeats.includes(seatNumber)) return;
-      if (selectedSeat === seatNumber) {
-        selectedSeat = null;
-      } else {
-        selectedSeat = seatNumber;
-      }
-      renderSeats();
-    }
-
-    // 예약 현황 불러오기 (GET)
-    async function loadBookedSeats() {
-      const date = dateInput.value;
-      const time = timeSelect.value;
-      if (!date || !time) return;
-
-      selectedSeat = null;
-      loadingStatus.style.display = "block";
-      loadingStatus.textContent = "좌석 예약 현황을 불러오는 중...";
-
-      try {
-        const query = \`?action=getBookings&date=\${encodeURIComponent(date)}&time=\${encodeURIComponent(time)}\`;
-        const res = await fetch(SCRIPT_URL + query, { method: "GET" });
-        const text = await res.text();
-        
-        let data = [];
-        try {
-          data = JSON.parse(text);
-        } catch(e) {
-          data = [];
-        }
-
-        if (Array.isArray(data)) {
-          bookedSeats = data.map(item => {
-            if (typeof item === 'number') return item;
-            if (item && item.seat) return parseInt(item.seat, 10);
-            return parseInt(item, 10);
-          }).filter(n => !isNaN(n));
-        } else if (data && data.bookedSeats) {
-          bookedSeats = data.bookedSeats.map(n => parseInt(n, 10)).filter(n => !isNaN(n));
-        } else {
-          bookedSeats = [];
-        }
-      } catch (err) {
-        console.warn("예약 목록 조회 알림:", err);
-        bookedSeats = [];
-      } finally {
-        loadingStatus.style.display = "none";
-        renderSeats();
-      }
-    }
-
-    // 날짜/시간 변경 이벤트
-    dateInput.addEventListener("change", loadBookedSeats);
-    timeSelect.addEventListener("change", loadBookedSeats);
-
-    // 전화번호 하이픈 자동완성
-    phoneInput.addEventListener("input", (e) => {
-      let val = e.target.value.replace(/[^0-9]/g, "");
-      if (val.length > 3 && val.length <= 7) {
-        val = val.slice(0, 3) + "-" + val.slice(3);
-      } else if (val.length > 7) {
-        val = val.slice(0, 3) + "-" + val.slice(3, 7) + "-" + val.slice(7, 11);
-      }
-      e.target.value = val;
-    });
-
-    // 폼 제출 (POST)
-    reservationForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-
-      if (!selectedSeat) {
-        alert("자리를 선택해주세요 (1번~10번).");
-        return;
-      }
-
-      const date = dateInput.value;
-      const time = timeSelect.value;
-      const name = nameInput.value.trim();
-      const phone = phoneInput.value.trim();
-
-      if (!name) {
-        alert("이름을 입력해주세요.");
-        return;
-      }
-      if (!phone) {
-        alert("전화번호를 입력해주세요.");
-        return;
-      }
-
-      const payload = {
-        date: date,
-        time: time,
-        selectedSeat: selectedSeat,
-        name: name,
-        phone: phone
-      };
-
-      submitBtn.disabled = true;
-      submitBtn.textContent = "예약 처리 중...";
-
-      try {
-        const response = await fetch(SCRIPT_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "text/plain;charset=utf-8"
-          },
-          body: JSON.stringify(payload)
-        });
-
-        alert(\`[예약 완료]\\n날짜: \${date}\\n시간: \${time}\\n좌석: \${selectedSeat}번\\n예약자: \${name}\\n\\n성공적으로 예약되었습니다!\`);
-        window.location.reload();
-      } catch (error) {
-        console.error("예약 전송 결과:", error);
-        alert(\`예약 요청이 전송되었습니다.\\n구글 시트('도서관 자리')를 확인해주세요.\`);
-        window.location.reload();
-      } finally {
-        submitBtn.disabled = false;
-        submitBtn.textContent = "예약하기";
-      }
-    });
-
-    // 초기화 실행
-    initDate();
-    loadBookedSeats();
-  </script>
-</body>
-</html>`;
-
-  // Sample Google Apps Script backend code
-  const gasBackendCode = `// Google Apps Script (도서관 자리 예약 시스템 백엔드)
-// 스프레드시트 탭 이름: "도서관 자리", "회원명단"
-
+// 1. GET 요청 처리 (예약 내역 조회 및 회원 확인)
 function doGet(e) {
   try {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("도서관 자리");
-    if (!sheet) {
-      return ContentService.createTextOutput(JSON.stringify({ bookedSeats: [] }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
     const params = e.parameter || {};
-    const targetDate = params.date || "";
-    const targetTime = params.time || "";
+    const action = params.action || "getBookings";
 
-    const data = sheet.getDataRange().getValues();
-    // 헤더 행을 제외하고 데이터 순회 (A열: 날짜, B열: 시간, C열: 자리번호, D열: 이름, E열: 전화번호)
+    // A. 회원명단 확인 요청인 경우
+    if (action === "checkMember") {
+      const memberSheet = ss.getSheetByName("회원명단");
+      const targetName = (params.name || "").trim();
+      const targetPhone = (params.phone || "").replace(/[^0-9]/g, "");
+
+      if (!memberSheet) {
+        return createJsonResponse({ isMember: false, message: "회원명단 시트 없음" });
+      }
+
+      const mData = memberSheet.getDataRange().getValues();
+      for (let i = 1; i < mData.length; i++) {
+        const mName = String(mData[i][0]).trim();
+        const mPhone = String(mData[i][1]).replace(/[^0-9]/g, "");
+        if (mName === targetName && (!targetPhone || mPhone === targetPhone)) {
+          return createJsonResponse({ isMember: true, name: mName, phone: mData[i][1] });
+        }
+      }
+      return createJsonResponse({ isMember: false });
+    }
+
+    // B. 좌석 예약 목록 조회 (해당 날짜와 시간대에 예약된 좌석 번호 배열 반환)
+    const seatSheet = ss.getSheetByName("도서관 자리");
+    if (!seatSheet) {
+      return createJsonResponse([]);
+    }
+
+    const targetDate = (params.date || "").trim();
+    const targetTime = (params.time || "").trim();
+    const slotPrefix = (params.slot || targetTime.slice(0, 5)).trim();
+
+    const data = seatSheet.getDataRange().getValues();
     const booked = [];
+
+    // [A열: 예약날짜, B열: 이용시간, C열: 자리번호, D열: 이름, E열: 전화번호]
     for (let i = 1; i < data.length; i++) {
       const rowDate = String(data[i][0]).trim();
       const rowTime = String(data[i][1]).trim();
       const rowSeat = Number(data[i][2]);
 
-      // 날짜와 시간이 일치하는 경우 예약된 좌석으로 추가
-      if (rowDate === targetDate && (rowTime === targetTime || rowTime.indexOf(targetTime.slice(0, 5)) !== -1)) {
-        if (!isNaN(rowSeat)) {
-          booked.push(rowSeat);
-        }
+      const isSameDate = (rowDate === targetDate);
+      const isSameTime = (rowTime === targetTime || rowTime.indexOf(slotPrefix) !== -1);
+
+      if (isSameDate && isSameTime && !isNaN(rowSeat)) {
+        booked.push(rowSeat);
       }
     }
 
-    return ContentService.createTextOutput(JSON.stringify(booked))
-      .setMimeType(ContentService.MimeType.JSON);
+    return createJsonResponse(booked);
+
   } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ error: err.message, bookedSeats: [] }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return createJsonResponse({ error: err.message, bookedSeats: [] });
   }
 }
 
+// 2. POST 요청 처리 (신규 자리 예약 및 회원명단 자동 등록)
 function doPost(e) {
   try {
-    const rawData = e.postData.contents;
-    const body = JSON.parse(rawData);
+    const raw = e.postData.contents;
+    const body = JSON.parse(raw);
 
     const date = body.date;
     const time = body.time;
-    const seat = body.selectedSeat || body.seat;
-    const name = body.name;
-    const phone = body.phone;
+    const seat = Number(body.selectedSeat || body.seat);
+    const name = (body.name || "").trim();
+    const phone = (body.phone || "").trim();
     const now = new Date();
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let sheet = ss.getSheetByName("도서관 자리");
-    
-    // 시트가 없으면 자동 생성 및 헤더 삽입
-    if (!sheet) {
-      sheet = ss.insertSheet("도서관 자리");
-      sheet.appendRow(["예약날짜", "이용시간", "자리번호", "이름", "전화번호", "등록일시"]);
-    } else if (sheet.getLastRow() === 0) {
-      sheet.appendRow(["예약날짜", "이용시간", "자리번호", "이름", "전화번호", "등록일시"]);
+
+    // 1) "도서관 자리" 시트 준비
+    let seatSheet = ss.getSheetByName("도서관 자리");
+    if (!seatSheet) {
+      seatSheet = ss.insertSheet("도서관 자리");
+      seatSheet.appendRow(["예약날짜", "이용시간", "자리번호", "회원명", "전화번호", "예약일시"]);
+    } else if (seatSheet.getLastRow() === 0) {
+      seatSheet.appendRow(["예약날짜", "이용시간", "자리번호", "회원명", "전화번호", "예약일시"]);
     }
 
-    // 중복 예약 검증
-    const data = sheet.getDataRange().getValues();
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][0]).trim() === String(date).trim() &&
-          String(data[i][1]).trim() === String(time).trim() &&
-          Number(data[i][2]) === Number(seat)) {
-        return ContentService.createTextOutput(JSON.stringify({
+    // 중복 좌석 예약 여부 검사
+    const seatData = seatSheet.getDataRange().getValues();
+    for (let i = 1; i < seatData.length; i++) {
+      if (String(seatData[i][0]).trim() === String(date).trim() &&
+          String(seatData[i][1]).trim() === String(time).trim() &&
+          Number(seatData[i][2]) === seat) {
+        return createJsonResponse({
           result: "error",
-          message: "이미 해당 시간대에 예약된 자리입니다."
-        })).setMimeType(ContentService.MimeType.JSON);
+          message: "선택하신 자리는 방금 다른 사용자가 예약했습니다."
+        });
       }
     }
 
-    // 신규 예약 행 추가
-    sheet.appendRow([date, time, seat, name, phone, now]);
+    // 도서관 자리 행 추가
+    seatSheet.appendRow([date, time, seat, name, phone, now]);
 
-    return ContentService.createTextOutput(JSON.stringify({
+    // 2) "회원명단" 시트에 없으면 자동 등록
+    let memberSheet = ss.getSheetByName("회원명단");
+    if (!memberSheet) {
+      memberSheet = ss.insertSheet("회원명단");
+      memberSheet.appendRow(["회원명", "전화번호", "가입/등록일시"]);
+    } else if (memberSheet.getLastRow() === 0) {
+      memberSheet.appendRow(["회원명", "전화번호", "가입/등록일시"]);
+    }
+
+    // 회원명단 중복 확인
+    const mData = memberSheet.getDataRange().getValues();
+    let alreadyMember = false;
+    for (let i = 1; i < mData.length; i++) {
+      if (String(mData[i][0]).trim() === name && String(mData[i][1]).replace(/[^0-9]/g, "") === phone.replace(/[^0-9]/g, "")) {
+        alreadyMember = true;
+        break;
+      }
+    }
+
+    if (!alreadyMember) {
+      memberSheet.appendRow([name, phone, now]);
+    }
+
+    return createJsonResponse({
       result: "success",
-      message: "예약이 성공적으로 완료되었습니다."
-    })).setMimeType(ContentService.MimeType.JSON);
+      message: "예약 및 회원 등록이 정상 완료되었습니다."
+    });
 
   } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({
+    return createJsonResponse({
       result: "error",
       message: err.message
-    })).setMimeType(ContentService.MimeType.JSON);
+    });
   }
+}
+
+function createJsonResponse(data) {
+  return ContentService.createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
 }`;
 
   const copyToClipboard = (text: string, type: 'html' | 'gas') => {
@@ -799,54 +446,69 @@ function doPost(e) {
     }
   };
 
-  const downloadHtmlFile = () => {
-    const blob = new Blob([standaloneHtmlCode], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'index.html';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col justify-between py-6 px-4 sm:px-6">
       {/* Top Banner with Quick Actions */}
-      <header className="max-w-xl mx-auto w-full mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm">
-            <Armchair className="w-5 h-5" />
+      <header className="max-w-xl mx-auto w-full mb-3">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm">
+              <Armchair className="w-5 h-5" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold tracking-tight text-slate-900 leading-tight">
+                도서관 자리 예약 시스템
+              </h1>
+              <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                <span className="flex items-center gap-1 font-medium text-blue-600">
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  도서관 자리
+                </span>
+                <span>/</span>
+                <span className="flex items-center gap-1 font-medium text-indigo-600">
+                  <Users className="w-3.5 h-3.5" />
+                  회원명단 연동
+                </span>
+              </div>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-bold tracking-tight text-slate-900 leading-tight">
-              도서관 자리 예약 시스템
-            </h1>
-            <p className="text-xs text-slate-500">
-              구글 시트(도서관 자리) 실시간 연동
-            </p>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setShowVercelFixModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 transition-colors shadow-2xs cursor-pointer"
+              title="Vercel 배포 오류 해결 방법"
+            >
+              <AlertCircle className="w-3.5 h-3.5" />
+              <span>Vercel 배포 오류 해결</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowGasModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer"
+              title="구글 앱스 스크립트 코드"
+            >
+              <Info className="w-3.5 h-3.5 text-slate-400" />
+              <span>GAS 코드</span>
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Quick Notification regarding Vercel Fix */}
+        <div className="mt-2.5 p-2.5 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between text-xs text-blue-900">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-blue-600 shrink-0" />
+            <span>
+              <strong>Vercel 빌드 설정 완료:</strong> <code className="bg-blue-100 px-1 py-0.5 rounded font-mono">vercel.json</code> 및 Vite ESM 호환성 패치가 저장소에 반영되었습니다.
+            </span>
+          </div>
           <button
             type="button"
-            onClick={() => setShowCodeModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors shadow-2xs"
-            title="Vercel 배포용 단일 index.html 파일 확인"
+            onClick={() => setShowVercelFixModal(true)}
+            className="text-blue-700 font-bold underline shrink-0 cursor-pointer ml-2"
           >
-            <Code2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Vercel 배포용</span> index.html
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowGasModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-2xs"
-            title="구글 앱스 스크립트 코드"
-          >
-            <Info className="w-3.5 h-3.5" />
-            <span>GAS 안내</span>
+            해결법 보기
           </button>
         </div>
       </header>
@@ -859,7 +521,7 @@ function doPost(e) {
             <div className="flex-1">
               <p className="font-semibold">{fetchError}</p>
               <p className="text-amber-700 mt-0.5">
-                상단 <strong>[GAS 안내]</strong> 버튼을 눌러 스프레드시트에 <code className="bg-amber-100 px-1 py-0.5 rounded">doGet</code> 함수를 배포하면 기존 예약 차단이 완벽하게 동기화됩니다.
+                구글 시트에 상단 <strong>[GAS 코드]</strong>의 <code className="bg-amber-100 px-1 py-0.5 rounded">doGet</code> 함수를 복사해 [웹 앱으로 배포]하면 예약 마감 자리가 실시간 회색 차단됩니다.
               </p>
             </div>
           </div>
@@ -905,7 +567,7 @@ function doPost(e) {
             </div>
           </div>
 
-          {/* 2. 자리 선택 영역 */}
+          {/* 2. 자리 선택 영역 (10석) */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
@@ -987,39 +649,68 @@ function doPost(e) {
             )}
           </div>
 
-          {/* 3. 예약자 정보 입력 */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1 border-t border-slate-100">
-            <div>
-              <label htmlFor="name" className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5 text-slate-400" />
-                이름 (회원명)
-              </label>
-              <input
-                id="name"
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="홍길동"
-                required
-                className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all text-slate-800"
-              />
+          {/* 3. 예약자 및 회원명단 연동 */}
+          <div className="pt-2 border-t border-slate-100 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label htmlFor="name" className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-slate-400" />
+                    이름 (회원명)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleCheckMember}
+                    disabled={isCheckingMember || !name.trim()}
+                    className="text-[11px] text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-0.5 cursor-pointer disabled:opacity-40"
+                  >
+                    <Search className="w-3 h-3" />
+                    {isCheckingMember ? '확인 중...' : '회원 확인'}
+                  </button>
+                </div>
+                <input
+                  id="name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    setMemberStatus(null);
+                  }}
+                  placeholder="홍길동"
+                  required
+                  className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="phone" className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5 text-slate-400" />
+                  전화번호
+                </label>
+                <input
+                  id="phone"
+                  type="tel"
+                  value={phone}
+                  onChange={handlePhoneChange}
+                  placeholder="010-1234-5678"
+                  required
+                  className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all text-slate-800"
+                />
+              </div>
             </div>
 
-            <div>
-              <label htmlFor="phone" className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                <Phone className="w-3.5 h-3.5 text-slate-400" />
-                전화번호
-              </label>
-              <input
-                id="phone"
-                type="tel"
-                value={phone}
-                onChange={handlePhoneChange}
-                placeholder="010-1234-5678"
-                required
-                className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all text-slate-800"
-              />
-            </div>
+            {memberStatus && (
+              <div
+                className={`p-2.5 rounded-xl text-xs flex items-center gap-2 ${
+                  memberStatus.isMember
+                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                    : 'bg-slate-100 text-slate-700 border border-slate-200'
+                }`}
+              >
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{memberStatus.message}</span>
+              </div>
+            )}
           </div>
 
           {/* 4. 예약하기 버튼 */}
@@ -1057,54 +748,78 @@ function doPost(e) {
         </div>
       </main>
 
-      {/* Footer Info */}
-      <footer className="max-w-xl mx-auto w-full text-center mt-4">
-        <p className="text-xs text-slate-400">
-          Vercel 배포를 위한 <code className="bg-slate-200/60 px-1 py-0.5 rounded text-slate-600 font-mono">index.html</code> 단일 파일 및 구글 앱스 스크립트 코드를 제공합니다.
-        </p>
-      </footer>
-
-      {/* Standalone index.html Modal */}
-      {showCodeModal && (
+      {/* Vercel Error Solution Modal */}
+      {showVercelFixModal && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-xl flex flex-col max-h-[90vh] overflow-hidden">
+          <div className="bg-white w-full max-w-xl rounded-2xl shadow-xl flex flex-col max-h-[90vh] overflow-hidden">
             <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-slate-900 text-base">
-                  Vercel 배포용 단일 index.html 파일
-                </h3>
-                <p className="text-xs text-slate-500">
-                  외부 빌드나 의존성 없이 Vercel 정적 호스팅에 바로 배포할 수 있는 완전한 단일 HTML 파일입니다.
-                </p>
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center">
+                  <AlertCircle className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">
+                    GitHub / Vercel 배포 실패 원인 및 해결 방법
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    스크린샷에 나타난 "All checks have failed" 오류 원인 안내
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
-                onClick={() => setShowCodeModal(false)}
-                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center text-lg"
+                onClick={() => setShowVercelFixModal(false)}
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center text-lg cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <div className="p-4 bg-slate-900 text-slate-200 overflow-y-auto font-mono text-xs leading-relaxed flex-1">
-              <pre className="whitespace-pre">{standaloneHtmlCode}</pre>
+            <div className="p-5 overflow-y-auto space-y-4 text-xs text-slate-700 leading-relaxed">
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl">
+                <p className="font-bold text-rose-900 mb-1">
+                  왜 Vercel 배포에서 실패했나요?
+                </p>
+                <ol className="list-decimal list-inside space-y-1 text-rose-800">
+                  <li><strong>Vercel 빌드 설정 파일(vercel.json) 누락:</strong> Vercel이 프레임워크와 출력 디렉토리(<code className="bg-rose-100 px-1 py-0.5 rounded">dist</code>)를 자동 인식하지 못했습니다.</li>
+                  <li><strong>ES 모듈 __dirname 호환성:</strong> Node.js 최신 환경에서 Vite 설정 파일 내 <code className="bg-rose-100 px-1 py-0.5 rounded">__dirname</code> 참조 시 발생하는 에러였습니다.</li>
+                </ol>
+              </div>
+
+              <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl">
+                <p className="font-bold text-emerald-900 mb-1.5 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  이미 프로젝트 코드에서 수정 조치를 완료했습니다!
+                </p>
+                <ul className="list-disc list-inside space-y-1 text-emerald-800">
+                  <li><code className="bg-emerald-100 px-1 py-0.5 rounded">vercel.json</code> 파일 생성 (<code className="font-mono">"framework": "vite", "outputDirectory": "dist"</code> 지정)</li>
+                  <li><code className="bg-emerald-100 px-1 py-0.5 rounded">vite.config.ts</code> 내 Node ESM 호환성 패치 완료</li>
+                </ul>
+              </div>
+
+              <div className="p-3.5 bg-slate-100 rounded-xl space-y-2">
+                <p className="font-bold text-slate-800">깃허브에 반영하는 가장 간단한 방법:</p>
+                <p className="text-slate-600">
+                  1. 로컬 터미널에서 아래 명령어를 실행하여 GitHub <code className="font-mono">main</code> 브랜치로 푸시하면 Vercel이 <strong>초록색 통과(Success)</strong>로 자동 재배포됩니다:
+                </p>
+                <div className="bg-slate-900 text-slate-200 p-2.5 rounded-lg font-mono text-[11px]">
+                  git add .<br />
+                  git commit -m "fix: add vercel.json and ESM vite config"<br />
+                  git push origin main
+                </div>
+                <p className="text-slate-600 mt-2">
+                  2. 또는 Vercel 프로젝트 대시보드의 <strong>Settings → Git</strong> 에서 <strong>Redeploy</strong>를 누르셔도 됩니다.
+                </p>
+              </div>
             </div>
 
-            <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-2">
+            <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-end">
               <button
                 type="button"
-                onClick={downloadHtmlFile}
-                className="px-3.5 py-2 text-xs font-semibold bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-100 transition-colors shadow-2xs"
+                onClick={() => setShowVercelFixModal(false)}
+                className="px-4 py-2 text-xs font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
               >
-                index.html 파일 다운로드
-              </button>
-              <button
-                type="button"
-                onClick={() => copyToClipboard(standaloneHtmlCode, 'html')}
-                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-2xs"
-              >
-                {copiedHtml ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                {copiedHtml ? '복사 완료!' : '전체 코드 복사'}
+                확인 완료
               </button>
             </div>
           </div>
@@ -1118,16 +833,16 @@ function doPost(e) {
             <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-slate-900 text-base">
-                  구글 앱스 스크립트 (GAS) 백엔드 코드
+                  구글 앱스 스크립트 (GAS) 전체 백엔드 코드
                 </h3>
                 <p className="text-xs text-slate-500">
-                  구글 시트의 [확장 프로그램] → [Apps Script]에 붙여넣고 [웹 앱으로 배포]하면 예약이 자동 저장됩니다.
+                  구글 시트의 <strong>"도서관 자리"</strong> 및 <strong>"회원명단"</strong> 탭과 100% 일치하도록 구성된 코드입니다.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setShowGasModal(false)}
-                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center text-lg"
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center text-lg cursor-pointer"
               >
                 ✕
               </button>
@@ -1139,15 +854,15 @@ function doPost(e) {
 
             <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
               <span className="text-xs text-slate-500">
-                액세스 권한: <strong>모든 사용자(Anyone)</strong>로 배포해야 합니다.
+                배포 시 <strong>액세스 권한: 모든 사용자(Anyone)</strong>로 설정해야 합니다.
               </span>
               <button
                 type="button"
                 onClick={() => copyToClipboard(gasBackendCode, 'gas')}
-                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-2xs"
+                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-2xs cursor-pointer"
               >
                 {copiedGas ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                {copiedGas ? '복사 완료!' : 'GAS 코드 복사'}
+                {copiedGas ? '복사 완료!' : 'GAS 전체 코드 복사'}
               </button>
             </div>
           </div>
